@@ -1,0 +1,99 @@
+databaseChangeLog:
+  - changeSet:
+      id: 001-create-scooters
+      author: course
+      changes:
+        - createTable:
+            tableName: scooters
+            columns:
+              - column:
+                  name: id
+                  type: BIGINT
+                  autoIncrement: true
+                  constraints:
+                    primaryKey: true
+                    primaryKeyName: pk_scooters
+                    nullable: false
+              - column:
+                  name: serial_number
+                  type: VARCHAR(64)
+                  constraints:
+                    nullable: false
+                    unique: true
+                    uniqueConstraintName: uk_scooters_serial_number
+              - column:
+                  name: model
+                  type: VARCHAR(120)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: battery_level
+                  type: INTEGER
+                  constraints:
+                    nullable: false
+              - column:
+                  name: price_per_minute
+                  type: DECIMAL(8, 2)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: status
+                  type: VARCHAR(32)
+                  constraints:
+                    nullable: false
+        - sql:
+            sql: ALTER TABLE scooters ADD CONSTRAINT ck_scooters_battery_level CHECK (battery_level BETWEEN 0 AND 100)
+        - insert:
+            tableName: scooters
+            columns:
+              - column:
+                  name: serial_number
+                  value: ES-1001
+              - column:
+                  name: model
+                  value: Segway Ninebot Max
+              - column:
+                  name: battery_level
+                  valueNumeric: 95
+              - column:
+                  name: price_per_minute
+                  valueNumeric: 0.25
+              - column:
+                  name: status
+                  value: AVAILABLE
+        - insert:
+            tableName: scooters
+            columns:
+              - column:
+                  name: serial_number
+                  value: ES-1002
+              - column:
+                  name: model
+                  value: Xiaomi Scooter 4
+              - column:
+                  name: battery_level
+                  valueNumeric: 72
+              - column:
+                  name: price_per_minute
+                  valueNumeric: 0.20
+              - column:
+                  name: status
+                  value: IN_USE
+        - insert:
+            tableName: scooters
+            columns:
+              - column:
+                  name: serial_number
+                  value: ES-1003
+              - column:
+                  name: model
+                  value: Segway Ninebot F2
+              - column:
+                  name: battery_level
+                  valueNumeric: 18
+              - column:
+                  name: price_per_minute
+                  valueNumeric: 0.18
+              - column:
+                  name: status
+                  value: MAINTENANCE

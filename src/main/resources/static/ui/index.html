@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Керування самокатами</title>
+  <style>
+    body { font: 16px system-ui, sans-serif; max-width: 1000px; margin: 32px auto; padding: 0 16px; }
+    header, .form-row, .actions { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+    header { justify-content: space-between; }
+    label { display: grid; gap: 4px; }
+    input, select, button { font: inherit; padding: 7px; }
+    table { border-collapse: collapse; width: 100%; margin-top: 20px; }
+    th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }
+    th { background: #f3f5f7; }
+    #message { white-space: pre-wrap; min-height: 1.5em; }
+    .error { color: #a00; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Парк електросамокатів</h1>
+    <button id="logout" type="button">Вийти</button>
+  </header>
+
+  <p>Ви увійшли через Keycloak. Усі операції з API виконуються з вашим JWT.</p>
+  <h2 id="form-title">Додати самокат</h2>
+  <form id="scooter-form">
+    <input id="scooter-id" type="hidden">
+    <div class="form-row">
+      <label>Серійний номер
+        <input id="serial-number" maxlength="64" required>
+      </label>
+      <label>Модель
+        <input id="model" maxlength="120" required>
+      </label>
+      <label>Заряд батареї, %
+        <input id="battery-level" type="number" min="0" max="100" required>
+      </label>
+      <label>Ціна за хвилину
+        <input id="price-per-minute" type="number" min="0.01" step="0.01" required>
+      </label>
+      <label>Статус
+        <select id="status">
+          <option value="AVAILABLE">Доступний</option>
+          <option value="IN_USE">У поїздці</option>
+          <option value="MAINTENANCE">На обслуговуванні</option>
+        </select>
+      </label>
+      <div class="actions">
+        <button type="submit">Зберегти</button>
+        <button id="cancel-edit" type="button" hidden>Скасувати</button>
+      </div>
+    </div>
+  </form>
+
+  <p id="message" role="status"></p>
+  <div class="actions">
+    <h2>Самокати</h2>
+    <button id="refresh" type="button">Оновити список</button>
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th>ID</th><th>Серійний номер</th><th>Модель</th><th>Заряд, %</th>
+        <th>Ціна/хв</th><th>Статус</th><th>Дії</th>
+      </tr>
+    </thead>
+    <tbody id="scooters"></tbody>
+  </table>
+
+  <script>
+    const form = document.getElementById('scooter-form');
+    const list = document.getElementById('scooters');
+    const message = document.getElementById('message');
+    let accessToken;
+
+    async function getToken() {
+      if (accessToken) return accessToken;
+      const response = await fetch('/ui/token');
+      if (!response.ok) throw new Error('Не вдалося отримати токен. Увійдіть повторно.');
+      accessToken = (await response.json()).access_token;
+      return accessToken;
+    }
+
+    async function api(path, options = {}) {
+      const token = await getToken();
+      const response = await fetch(path, {
+        ...options,
+        headers: {
+          ...(options.body ? { 'Content-Type': 'application/json' } : {}),
+          ...options.headers,
+          Authorization: 'Bearer ' + token
+        }
+      });
+      if (!response.ok) {
+        if (response.status === 403) {
+          throw new Error('403 Forbidden: Немає прав доступу. Для цієї дії потрібна роль ADMIN.');
+        }
+        const detail = await response.text();
+        throw new Error(response.status + ' ' + response.statusText + (detail ? ': ' + detail : ''));
+      }
+      return response.status === 204 ? null : response.json();
+    }
+
+    async function hasAdminRole() {
+      const token = await getToken();
+      const encodedPayload = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+      const payload = JSON.parse(new TextDecoder().decode(
+        Uint8Array.from(atob(encodedPayload), character => character.charCodeAt(0))
+      ));
+      return payload.realm_access?.roles?.includes('ADMIN') ?? false;
+    }
+
+    function showError(error) {
+      message.textContent = error.message;
+      message.className = 'error';
+    }
+
+    async function loadScooters() {
+      try {
+        const scooters = await api('/api/scooters');
+        list.replaceChildren();
+        for (const scooter of scooters) {
+          const row = document.createElement('tr');
+          for (const value of [
+            scooter.id, scooter.serialNumber, scooter.model, scooter.batteryLevel,
+            scooter.pricePerMinute, scooter.status
+          ]) {
+            const cell = document.createElement('td');
+            cell.textContent = value;
+            row.appendChild(cell);
+          }
+          const actions = document.createElement('td');
+          const edit = document.createElement('button');
+          edit.type = 'button';
+          edit.textContent = 'Редагувати';
+          edit.addEventListener('click', () => editScooter(scooter));
+          const remove = document.createElement('button');
+          remove.type = 'button';
+          remove.textContent = 'Видалити';
+          remove.addEventListener('click', () => deleteScooter(scooter.id));
+          actions.append(edit, remove);
+          row.appendChild(actions);
+          list.appendChild(row);
+        }
+        message.textContent = 'Завантажено записів: ' + scooters.length;
+        message.className = '';
+      } catch (error) {
+        showError(error);
+      }
+    }
+
+    async function editScooter(scooter) {
+      try {
+        if (!await hasAdminRole()) {
+          throw new Error('403 Forbidden: Немає прав доступу. Для редагування потрібна роль ADMIN.');
+        }
+      } catch (error) {
+        showError(error);
+        return;
+      }
+      document.getElementById('scooter-id').value = scooter.id;
+      document.getElementById('serial-number').value = scooter.serialNumber;
+      document.getElementById('model').value = scooter.model;
+      document.getElementById('battery-level').value = scooter.batteryLevel;
+      document.getElementById('price-per-minute').value = scooter.pricePerMinute;
+      document.getElementById('status').value = scooter.status;
+      document.getElementById('form-title').textContent = 'Редагувати самокат #' + scooter.id;
+      document.getElementById('cancel-edit').hidden = false;
+    }
+
+    function resetForm() {
+      form.reset();
+      document.getElementById('scooter-id').value = '';
+      document.getElementById('form-title').textContent = 'Додати самокат';
+      document.getElementById('cancel-edit').hidden = true;
+    }
+
+    form.addEventListener('submit', async event => {
+      event.preventDefault();
+      const id = document.getElementById('scooter-id').value;
+      const scooter = {
+        serialNumber: document.getElementById('serial-number').value.trim(),
+        model: document.getElementById('model').value.trim(),
+        batteryLevel: Number(document.getElementById('battery-level').value),
+        pricePerMinute: Number(document.getElementById('price-per-minute').value),
+        status: document.getElementById('status').value
+      };
+      try {
+        await api(id ? '/api/scooters/' + id : '/api/scooters', {
+          method: id ? 'PUT' : 'POST',
+          body: JSON.stringify(scooter)
+        });
+        resetForm();
+        await loadScooters();
+        message.textContent = id ? 'Самокат оновлено.' : 'Самокат створено.';
+      } catch (error) {
+        showError(error);
+      }
+    });
+
+    async function deleteScooter(id) {
+      if (!window.confirm('Видалити самокат #' + id + '?')) return;
+      try {
+        await api('/api/scooters/' + id, { method: 'DELETE' });
+        await loadScooters();
+        message.textContent = 'Самокат видалено.';
+      } catch (error) {
+        showError(error);
+      }
+    }
+
+    document.getElementById('cancel-edit').addEventListener('click', resetForm);
+    document.getElementById('refresh').addEventListener('click', loadScooters);
+    document.getElementById('logout').addEventListener('click', async () => {
+      try {
+        const csrfResponse = await fetch('/ui/csrf');
+        if (!csrfResponse.ok) throw new Error('Не вдалося отримати CSRF-токен.');
+        const csrf = await csrfResponse.json();
+        const logoutForm = document.createElement('form');
+        logoutForm.method = 'POST';
+        logoutForm.action = '/logout';
+        const csrfInput = document.createElement('input');
+        csrfInput.type = 'hidden';
+        csrfInput.name = '_csrf';
+        csrfInput.value = csrf.token;
+        logoutForm.appendChild(csrfInput);
+        document.body.appendChild(logoutForm);
+        logoutForm.submit();
+      } catch (error) {
+        showError(error);
+      }
+    });
+
+    loadScooters();
+  </script>
+</body>
+</html>

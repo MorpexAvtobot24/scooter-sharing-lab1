@@ -1,0 +1,49 @@
+server:
+  port: 8081
+
+spring:
+  application:
+    name: app
+
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:scooter_sharing}
+    username: ${DB_USERNAME:scooter_app}
+    password: ${DB_PASSWORD:scooter_dev}
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+
+  liquibase:
+    change-log: classpath:db/changelog/db.changelog-master.yaml
+
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: http://localhost:8080/realms/course-realm
+
+      client:
+        registration:
+          keycloak:
+            client-id: backend-app
+            client-authentication-method: none
+            authorization-grant-type: authorization_code
+            redirect-uri: "{baseUrl}/login/oauth2/code/keycloak"
+            scope: openid, profile
+        provider:
+          keycloak:
+            issuer-uri: http://localhost:8080/realms/course-realm
+
+  docker:
+    compose:
+      enabled: true
+      lifecycle-management: start-and-stop
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health

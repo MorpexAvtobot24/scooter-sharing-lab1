@@ -1,0 +1,120 @@
+@baseUrl = http://localhost:8081
+@keycloakUrl = http://localhost:8080
+
+### Public API: no token required (200)
+GET {{baseUrl}}/api/public/ping
+
+### Protected API: no token (expected 401 Unauthorized)
+GET {{baseUrl}}/api/scooters
+
+### Obtain an access token as alice (USER + ADMIN)
+POST {{keycloakUrl}}/realms/course-realm/protocol/openid-connect/token
+Content-Type: application/x-www-form-urlencoded
+
+client_id=backend-app&grant_type=password&username=alice&password=alice123
+
+> {%
+  client.global.set("aliceToken", response.body.access_token);
+%}
+
+### Obtain an access token as bob (USER only)
+POST {{keycloakUrl}}/realms/course-realm/protocol/openid-connect/token
+Content-Type: application/x-www-form-urlencoded
+
+client_id=backend-app&grant_type=password&username=bob&password=bob123
+
+> {%
+  client.global.set("bobToken", response.body.access_token);
+%}
+
+### Read scooter list with alice (200)
+GET {{baseUrl}}/api/scooters
+Authorization: Bearer {{aliceToken}}
+
+### Read scooter list with bob (USER, 200)
+GET {{baseUrl}}/api/scooters
+Authorization: Bearer {{bobToken}}
+
+### Create a scooter with alice (201)
+POST {{baseUrl}}/api/scooters
+Authorization: Bearer {{aliceToken}}
+Content-Type: application/json
+
+{
+  "serialNumber": "ES-HTTP-9001",
+  "model": "Demo Scooter",
+  "batteryLevel": 88,
+  "pricePerMinute": 0.30,
+  "status": "AVAILABLE"
+}
+
+> {%
+  client.global.set("scooterId", response.body.id);
+%}
+
+### Bob cannot create a scooter (expected 403 Forbidden)
+POST {{baseUrl}}/api/scooters
+Authorization: Bearer {{bobToken}}
+Content-Type: application/json
+
+{
+  "serialNumber": "ES-HTTP-BOB-9002",
+  "model": "Unauthorized Demo Scooter",
+  "batteryLevel": 88,
+  "pricePerMinute": 0.30,
+  "status": "AVAILABLE"
+}
+
+### Bob cannot update a scooter (expected 403 Forbidden)
+PUT {{baseUrl}}/api/scooters/{{scooterId}}
+Authorization: Bearer {{bobToken}}
+Content-Type: application/json
+
+{
+  "serialNumber": "ES-HTTP-9001",
+  "model": "Unauthorized Update",
+  "batteryLevel": 50,
+  "pricePerMinute": 0.30,
+  "status": "AVAILABLE"
+}
+
+### Bob cannot delete a scooter (expected 403 Forbidden)
+DELETE {{baseUrl}}/api/scooters/{{scooterId}}
+Authorization: Bearer {{bobToken}}
+
+### Read the created scooter (200)
+GET {{baseUrl}}/api/scooters/{{scooterId}}
+Authorization: Bearer {{aliceToken}}
+
+### Update the created scooter (200)
+PUT {{baseUrl}}/api/scooters/{{scooterId}}
+Authorization: Bearer {{aliceToken}}
+Content-Type: application/json
+
+{
+  "serialNumber": "ES-HTTP-9001",
+  "model": "Demo Scooter Updated",
+  "batteryLevel": 76,
+  "pricePerMinute": 0.35,
+  "status": "AVAILABLE"
+}
+
+### Delete the created scooter (204)
+DELETE {{baseUrl}}/api/scooters/{{scooterId}}
+Authorization: Bearer {{aliceToken}}
+
+### SecurityFilterChain rule: bob has no ADMIN role (expected 403 Forbidden)
+GET {{baseUrl}}/api/admin/reports
+Authorization: Bearer {{bobToken}}
+
+### SecurityFilterChain rule: alice has ADMIN role (200)
+GET {{baseUrl}}/api/admin/reports
+Authorization: Bearer {{aliceToken}}
+
+### @PreAuthorize on controller method: bob has no ADMIN role (expected 403 Forbidden)
+GET {{baseUrl}}/api/reports/more
+Authorization: Bearer {{bobToken}}
+
+### @PreAuthorize on controller method: alice has ADMIN role (200)
+GET {{baseUrl}}/api/reports/more
+Authorization: Bearer {{aliceToken}}

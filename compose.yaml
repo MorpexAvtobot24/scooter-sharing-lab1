@@ -1,0 +1,34 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: scooter_sharing
+      POSTGRES_USER: scooter_app
+      POSTGRES_PASSWORD: scooter_dev
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U scooter_app -d scooter_sharing"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:25.0
+    command: start-dev --import-realm
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./keycloak/course-realm.json:/opt/keycloak/data/import/course-realm.json:ro
+
+volumes:
+  postgres-data:
+
+# Spring Boot Docker Compose support starts these containers on application startup.
+# Keycloak admin console: http://localhost:8080 (admin / admin)
+# Realm "course-realm" is pre-imported from ./keycloak/course-realm.json.
