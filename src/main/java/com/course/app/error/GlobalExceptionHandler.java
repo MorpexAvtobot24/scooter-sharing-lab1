@@ -3,6 +3,7 @@ package com.course.app.error;
 import com.course.app.scooter.ScooterNotFoundException;
 import com.course.app.scooter.ScooterConflictException;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.core.task.TaskRejectedException;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -22,6 +23,12 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiError> handleBadRequest(IllegalArgumentException ex) {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                 .body(ApiError.of(400, ex.getMessage()));
+    }
+
+    @ExceptionHandler(TaskRejectedException.class)
+    public ResponseEntity<ApiError> handleTaskRejected(TaskRejectedException ex) {
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                .body(ApiError.of(429, "Сервер перевантажений, спробуйте пізніше"));
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)

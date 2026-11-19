@@ -13,8 +13,11 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -37,6 +40,9 @@ class ScooterServiceTest {
 
     @Mock
     private ScooterMapper mapper;
+
+    @Mock
+    private ScooterAsyncTasks asyncTasks;
 
     @InjectMocks
     private ScooterService service;
@@ -99,6 +105,7 @@ class ScooterServiceTest {
         verify(mapper).toEntity(request);
         verify(repository).save(scooter);
         verify(mapper).toDto(savedScooter);
+        verify(asyncTasks).sendScooterAuditNotificationAsync(1L);
     }
 
     @Test
@@ -130,6 +137,7 @@ class ScooterServiceTest {
         verify(mapper).updateEntity(request, scooter);
         verify(repository).save(scooter);
         verify(mapper).toDto(savedScooter);
+        verify(asyncTasks).sendScooterAuditNotificationAsync(2L);
     }
 
     @Test
@@ -180,6 +188,58 @@ class ScooterServiceTest {
         assertTrue(service.isBatteryReadyForRental(20));
         assertFalse(service.isBatteryReadyForRental(19));
         assertFalse(service.isBatteryReadyForRental(null));
+    }
+
+    @Test
+    void getDiagnostics_combinesIndependentTelemetryResults() {
+        when(repository.findById(8L)).thenReturn(Optional.of(new Scooter()));
+        when(asyncTasks.fetchGpsTelemetryAsync(8L)).thenReturn(CompletableFuture.completedFuture(
+                new GpsTelemetry("gps-8", "coordinates", false)));
+        when(asyncTasks.fetchBatteryDiagnosticsAsync(8L)).thenReturn(CompletableFuture.completedFuture(
+                new BatteryDiagnostics(88, "healthy", false)));
+
+        ScooterDiagnosticsDto result = service.getDiagnostics(8L);
+
+        assertEquals(8L, result.scooterId());
+        assertEquals("gps-8", result.gpsTelemetry().deviceId());
+        assertEquals(88, result.batteryDiagnostics().healthPercent());
+        assertFalse(result.fallback());
+    }
+
+    @Test
+    void getDiagnostics_failedTelemetryReturnsFallbackWithoutFailingRequest() {
+        when(repository.findById(8L)).thenReturn(Optional.of(new Scooter()));
+        when(asyncTasks.fetchGpsTelemetryAsync(8L)).thenReturn(
+                CompletableFuture.failedFuture(new IllegalStateException("GPS offline")));
+        when(asyncTasks.fetchBatteryDiagnosticsAsync(8L)).thenReturn(CompletableFuture.completedFuture(
+                new BatteryDiagnostics(88, "healthy", false)));
+
+        ScooterDiagnosticsDto result = service.getDiagnostics(8L);
+
+        assertTrue(result.fallback());
+        assertTrue(result.gpsTelemetry().fallback());
+        assertEquals(88, result.batteryDiagnostics().healthPercent());
+    }
+
+    @Test
+    void getDiagnostics_timeoutReturnsFallback() {
+        when(repository.findById(8L)).thenReturn(Optional.of(new Scooter()));
+        when(asyncTasks.fetchGpsTelemetryAsync(8L)).thenReturn(
+                CompletableFuture.supplyAsync(
+                        () -> new GpsTelemetry("gps-8", "late-coordinates", false),
+                        CompletableFuture.delayedExecutor(150, TimeUnit.MILLISECONDS)));
+        when(asyncTasks.fetchBatteryDiagnosticsAsync(8L)).thenReturn(CompletableFuture.completedFuture(
+                new BatteryDiagnostics(88, "healthy", false)));
+        service.setDiagnosticsTimeout(Duration.ofMillis(30));
+
+        long startNanos = System.nanoTime();
+        ScooterDiagnosticsDto result = service.getDiagnostics(8L);
+        long elapsedMillis = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startNanos);
+
+        assertTrue(elapsedMillis < 120, "Diagnostics should honor the configured 30ms timeout");
+        assertTrue(result.fallback());
+        assertTrue(result.gpsTelemetry().fallback());
+        assertTrue(result.batteryDiagnostics().fallback());
     }
 
     @Test

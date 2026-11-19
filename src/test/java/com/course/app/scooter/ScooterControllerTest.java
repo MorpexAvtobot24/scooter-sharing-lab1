@@ -92,6 +92,23 @@ class ScooterControllerTest {
     }
 
     @Test
+    @WithMockUser(username = "alice", roles = "USER")
+    void getDiagnostics_userCanAccessDiagnostics() throws Exception {
+        when(service.getDiagnostics(3L)).thenReturn(new ScooterDiagnosticsDto(
+                3L,
+                new GpsTelemetry("gps-3", "coordinates", false),
+                new BatteryDiagnostics(90, "healthy", false),
+                false));
+
+        mockMvc.perform(get("/api/scooters/3/diagnostics"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.scooterId").value(3))
+                .andExpect(jsonPath("$.gpsTelemetry.deviceId").value("gps-3"))
+                .andExpect(jsonPath("$.batteryDiagnostics.healthPercent").value(90))
+                .andExpect(jsonPath("$.fallback").value(false));
+    }
+
+    @Test
     @WithMockUser(username = "admin", roles = "ADMIN")
     void create_availableScooterWithLowBattery_returnsDescriptiveValidationMessage() throws Exception {
         mockMvc.perform(post("/api/scooters")

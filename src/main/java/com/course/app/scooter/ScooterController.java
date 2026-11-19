@@ -35,6 +35,11 @@ public class ScooterController {
         return service.findById(id);
     }
 
+    @GetMapping("/{id}/diagnostics")
+    public ScooterDiagnosticsDto getDiagnostics(@PathVariable Long id) {
+        return service.getDiagnostics(id);
+    }
+
     @AdminPostEndpoint
     public ResponseEntity<ScooterDto> create(@Valid @RequestBody ScooterDto scooterDto) {
         ScooterDto created = service.create(scooterDto);
