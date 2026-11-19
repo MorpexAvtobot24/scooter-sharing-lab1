@@ -10,6 +10,7 @@ import jakarta.validation.constraints.Size;
 
 import java.math.BigDecimal;
 
+@ValidScooterState
 public record ScooterDto(
         Long id,
         @NotBlank @Size(max = 64) String serialNumber,
