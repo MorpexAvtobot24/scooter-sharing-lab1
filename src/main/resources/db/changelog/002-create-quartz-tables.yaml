@@ -1,0 +1,10 @@
+databaseChangeLog:
+  - changeSet:
+      id: 002-create-quartz-tables
+      author: course
+      changes:
+        - sqlFile:
+            path: 002-create-quartz-tables.sql
+            relativeToChangelogFile: true
+            splitStatements: true
+            stripComments: true
